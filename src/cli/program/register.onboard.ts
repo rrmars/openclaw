@@ -63,10 +63,7 @@ function listUnsupportedModernOptions(command: Command): string[] {
     .toSorted();
 }
 
-const AUTH_CHOICE_HELP = formatAuthChoiceChoicesForCli({
-  includeLegacyAliases: true,
-  includeSkip: true,
-});
+const AUTH_CHOICE_HELP = formatAuthChoiceChoicesForCli({ includeSkip: true });
 
 type OnboardAuthFlag = {
   readonly cliOption: string;
