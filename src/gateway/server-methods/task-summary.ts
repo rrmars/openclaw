@@ -55,8 +55,12 @@ export function mapTaskSummary(task: TaskRecord, opts?: { includePrompt?: boolea
   const prompt = opts?.includePrompt
     ? sanitizeTaskPromptText(task.task, TASK_PROMPT_MAX_CHARS) || undefined
     : undefined;
+  const resultSource =
+    task.runtime === "subagent" || task.runtime === "acp"
+      ? task.progressSummary
+      : (task.terminalSummary ?? task.progressSummary);
   const result = opts?.includePrompt
-    ? sanitizeTaskStatusText(task.progressSummary, { maxChars: TASK_RESULT_MAX_CHARS }) || undefined
+    ? sanitizeTaskStatusText(resultSource, { maxChars: TASK_RESULT_MAX_CHARS }) || undefined
     : undefined;
   const toolUseCount =
     typeof task.toolUseCount === "number" && Number.isInteger(task.toolUseCount)
