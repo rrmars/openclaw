@@ -656,7 +656,9 @@ describe("cron method validation", () => {
       { context, client: callerClient("ops") },
     );
 
-    expect(context.cron.remove).toHaveBeenCalledWith("cron-1");
+    expect(context.cron.remove).toHaveBeenCalledWith("cron-1", {
+      commitGuard: expect.any(Function),
+    });
     expect(respond).toHaveBeenCalledWith(true, { ok: true, removed: true }, undefined);
   });
 
@@ -1522,6 +1524,140 @@ describe("cron method validation", () => {
     },
   );
 
+  it.each([
+    ["cron.scratch.set", { id: "cron-1", content: "notes" }, "writeScratch"],
+    ["cron.remove", { id: "cron-1" }, "remove"],
+  ] as const)("revalidates caller scope at the %s commit owner", async (method, params, owner) => {
+    const context = createCronContext(createCronJob({ agentId: "ops" }));
+    const foreignJob = createCronJob({ agentId: "worker" });
+    if (owner === "writeScratch") {
+      context.cron.writeScratch.mockImplementationOnce(async (_id, write) => {
+        context.cron.getJob.mockReturnValue(foreignJob);
+        write.commitGuard?.();
+        return {
+          ok: true,
+          scratch: { content: write.content, revision: 1 },
+          currentRevision: 1,
+        };
+      });
+    } else if (owner === "remove") {
+      context.cron.remove.mockImplementationOnce(async (_id, options) => {
+        context.cron.getJob.mockReturnValue(foreignJob);
+        options?.commitGuard?.();
+        return { ok: true, removed: true };
+      });
+    }
+
+    const { respond } = await invokeCron(method, params, {
+      context,
+      client: callerClient("ops"),
+    });
+
+    expect(context.cron[owner]).toHaveBeenCalledOnce();
+    expectResponseError(respond, {
+      code: "INVALID_REQUEST",
+      messageIncludes: "unknown cron job id: cron-1",
+    });
+  });
+
+  it("revalidates an expiring current-job capability at removal commit", async () => {
+    const ownerSessionKey = "agent:ops:discord:work:group:creator";
+    const job = createCronJob({
+      agentId: "ops",
+      owner: { agentId: "ops", sessionKey: ownerSessionKey, accountId: "work" },
+      scheduledToolPolicy: {
+        version: 1,
+        mode: "account",
+        ownerSessionKey,
+        ownerAccountId: "work",
+      },
+    });
+    const context = createCronContext(job);
+    const client = callerClient("ops", "work", `agent:ops:cron:${job.id}:run:run-1`, job.id);
+    context.cron.remove.mockImplementationOnce(async (_id, options) => {
+      client.internal!.agentRuntimeIdentity!.cronSelfManagementContext!.expiresAtMs =
+        Date.now() - 1;
+      options?.commitGuard?.();
+      return { ok: true, removed: true };
+    });
+
+    const { respond } = await invokeCron("cron.remove", { id: job.id }, { context, client });
+
+    expect(context.cron.remove).toHaveBeenCalledOnce();
+    expectResponseError(respond, {
+      code: "INVALID_REQUEST",
+      messageIncludes: `unknown cron job id: ${job.id}`,
+    });
+  });
+
+  it("rejects a same-id replacement when removal depends on the current-job capability", async () => {
+    const ownerSessionKey = "agent:ops:discord:work:group:creator";
+    const job = createCronJob({
+      agentId: "ops",
+      owner: { agentId: "ops", sessionKey: ownerSessionKey, accountId: "work" },
+      scheduledToolPolicy: {
+        version: 1,
+        mode: "account",
+        ownerSessionKey,
+        ownerAccountId: "work",
+      },
+    });
+    const replacement = createCronJob({
+      agentId: "ops",
+      owner: { agentId: "ops", sessionKey: "agent:ops:main", accountId: "default" },
+      scheduledToolPolicy: { version: 1, mode: "trusted" },
+    });
+    const context = createCronContext(job);
+    const client = callerClient("ops", "work", `agent:ops:cron:${job.id}:run:run-1`, job.id);
+    context.cron.remove.mockImplementationOnce(async (_id, options) => {
+      context.cron.getJob.mockReturnValue(replacement);
+      options?.commitGuard?.();
+      return { ok: true, removed: true };
+    });
+
+    const { respond } = await invokeCron("cron.remove", { id: job.id }, { context, client });
+
+    expect(context.cron.remove).toHaveBeenCalledOnce();
+    expectResponseError(respond, {
+      code: "INVALID_REQUEST",
+      messageIncludes: `unknown cron job id: ${job.id}`,
+    });
+  });
+
+  it("does not switch from owner scope to the current-job capability at removal commit", async () => {
+    const ownerSessionKey = "agent:ops:discord:work:group:creator";
+    const job = createCronJob({
+      agentId: "ops",
+      owner: { agentId: "ops", sessionKey: ownerSessionKey, accountId: "work" },
+      scheduledToolPolicy: {
+        version: 1,
+        mode: "account",
+        ownerSessionKey,
+        ownerAccountId: "work",
+      },
+    });
+    const replacement = createCronJob({
+      agentId: "ops",
+      owner: { agentId: "ops", sessionKey: "agent:ops:main", accountId: "default" },
+      scheduledToolPolicy: { version: 1, mode: "trusted" },
+    });
+    const context = createCronContext(job);
+    const client = callerClient("ops", "work", ownerSessionKey, job.id);
+    context.cron.remove.mockImplementationOnce(async (_id, options) => {
+      context.cron.getJob.mockReturnValue(replacement);
+      options?.commitGuard?.();
+      return { ok: true, removed: true };
+    });
+
+    const { respond } = await invokeCron("cron.remove", { id: job.id }, { context, client });
+
+    expect(context.cron.remove).toHaveBeenCalledOnce();
+    expectResponseError(respond, {
+      code: "INVALID_REQUEST",
+      messageIncludes: `unknown cron job id: ${job.id}`,
+    });
+  });
+
   it("keeps cron.update mutation at zero after resolution outlives its run", async () => {
     const scope = createCronCreatorAuthorityRunScope("run-update-revoked");
     const grant = mintCronCreatorAuthorityGrant(scope);
@@ -1817,7 +1953,9 @@ describe("cron method validation", () => {
       { context, client: runClient },
     );
     expect(remove.respond).toHaveBeenCalledWith(true, { ok: true, removed: true }, undefined);
-    expect(context.cron.remove).toHaveBeenCalledWith(accountJob.id);
+    expect(context.cron.remove).toHaveBeenCalledWith(accountJob.id, {
+      commitGuard: expect.any(Function),
+    });
 
     const update = await invokeCron(
       "cron.update",
