@@ -20,6 +20,7 @@ export class CodexAssistantProjection {
   private readonly assistantItemOrder: string[] = [];
   private readonly assistantTimestampByItem = new Map<string, number>();
   private readonly assistantPhaseByItem = new Map<string, string>();
+  private readonly assistantDeliveryByItem = new Map<string, string>();
   private latestCompletedItemId: string | undefined;
   private latestCompletedTerminalAssistantItemId: string | undefined;
   private latestTerminalAssistantCandidateItemId: string | undefined;
@@ -173,7 +174,11 @@ export class CodexAssistantProjection {
     if (item?.type === "agentMessage" && itemId) {
       this.rememberAssistantItem(itemId);
     }
-    if (itemId && itemId !== this.latestTerminalAssistantCandidateItemId) {
+    if (
+      itemId &&
+      !this.isCommentaryAssistantItem(itemId) &&
+      itemId !== this.latestTerminalAssistantCandidateItemId
+    ) {
       this.markTerminalAssistantCandidateSupersededBy(itemId, {
         preserveEarlierActiveItem: true,
       });
@@ -196,7 +201,7 @@ export class CodexAssistantProjection {
     ) {
       this.pendingRawTerminalAssistantEchoItemId = undefined;
     }
-    if (itemId) {
+    if (itemId && !this.isCommentaryAssistantItem(itemId)) {
       this.latestCompletedItemId = itemId;
     }
     this.rememberAssistantPhase(item);
@@ -204,7 +209,7 @@ export class CodexAssistantProjection {
       this.latestCompletedTerminalAssistantItemId = item.id;
       this.markLatestTerminalAssistantCandidate(item.id, activeItemIds);
       this.pendingRawTerminalAssistantEchoItemId = item.id;
-    } else if (itemId) {
+    } else if (itemId && !this.isCommentaryAssistantItem(itemId)) {
       this.markTerminalAssistantCandidateSupersededBy(itemId, {
         preserveEarlierActiveItem: true,
       });
@@ -367,7 +372,8 @@ export class CodexAssistantProjection {
         return false;
       }
       const phase = readItemString(item, "phase");
-      return phase === "final_answer" || phase === undefined;
+      const delivery = readItemString(item, "delivery");
+      return delivery !== "async" && (phase === "final_answer" || phase === undefined);
     });
     const authoritative = authoritativeIndex >= 0 ? turnItems[authoritativeIndex] : undefined;
     const invalidatedByLaterTool = turnItems
@@ -395,7 +401,7 @@ export class CodexAssistantProjection {
   hasAssistantItemTextForSynthesis(): boolean {
     for (let i = this.assistantItemOrder.length - 1; i >= 0; i -= 1) {
       const itemId = this.assistantItemOrder[i];
-      if (!itemId || this.assistantPhaseByItem.get(itemId) === "commentary") {
+      if (!itemId || this.isCommentaryAssistantItem(itemId)) {
         continue;
       }
       const text = this.assistantTextByItem.get(itemId);
@@ -445,10 +451,17 @@ export class CodexAssistantProjection {
     if (phase) {
       this.assistantPhaseByItem.set(item.id, phase);
     }
+    const delivery = readItemString(item, "delivery");
+    if (delivery) {
+      this.assistantDeliveryByItem.set(item.id, delivery);
+    }
   }
 
   private isCommentaryAssistantItem(itemId: string): boolean {
-    return this.assistantPhaseByItem.get(itemId) === "commentary";
+    return (
+      this.assistantPhaseByItem.get(itemId) === "commentary" ||
+      this.assistantDeliveryByItem.get(itemId) === "async"
+    );
   }
 
   private isFinalAnswerAssistantItem(itemId: string): boolean {
@@ -560,7 +573,7 @@ export class CodexAssistantProjection {
         continue;
       }
       const text = this.assistantTextByItem.get(itemId)?.trim();
-      if (this.assistantPhaseByItem.get(itemId) === "commentary") {
+      if (this.isCommentaryAssistantItem(itemId)) {
         continue;
       }
       if (text && !this.isToolProgressEchoText(itemId, text)) {
@@ -578,7 +591,7 @@ export class CodexAssistantProjection {
     // never replace; they only ride along for post-handoff identity.
     for (let index = minIndex; index < this.assistantItemOrder.length; index += 1) {
       const itemId = this.assistantItemOrder[index];
-      if (!itemId || this.assistantPhaseByItem.get(itemId) === "commentary") {
+      if (!itemId || this.isCommentaryAssistantItem(itemId)) {
         continue;
       }
       const text = this.assistantTextByItem.get(itemId)?.trim();

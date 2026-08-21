@@ -65,10 +65,10 @@ export function selectGuardianSandbox(
 }
 
 export function resolveApprovalPolicy(value: unknown): CodexAppServerApprovalPolicy | undefined {
-  if (value === "on-failure") {
+  if (value === "on-failure" || value === "untrusted") {
     return "on-request";
   }
-  return value === "on-request" || value === "untrusted" || value === "never" ? value : undefined;
+  return value === "on-request" || value === "never" ? value : undefined;
 }
 
 export function resolveSandbox(value: unknown): CodexAppServerSandboxMode | undefined {

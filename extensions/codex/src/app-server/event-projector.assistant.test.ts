@@ -778,6 +778,83 @@ describe("CodexAppServerEventProjector assistant projection", () => {
     ]);
   });
 
+  it("keeps async final-answer delivery as nonterminal commentary", async () => {
+    const onAgentEvent = vi.fn();
+    const projector = await createProjector({
+      ...(await createParams()),
+      onAgentEvent,
+    });
+
+    await projector.handleNotification(
+      forCurrentTurn("item/completed", {
+        item: {
+          type: "agentMessage",
+          id: "terminal-answer",
+          phase: "final_answer",
+          text: "Finished.",
+        },
+      }),
+    );
+    const asyncCompletion = forCurrentTurn("item/completed", {
+      item: {
+        type: "agentMessage",
+        id: "async-update",
+        phase: "final_answer",
+        delivery: "async",
+        text: "Background agent update.",
+      },
+    });
+    await projector.handleNotification(asyncCompletion);
+    await projector.handleNotification(asyncCompletion);
+    await projector.handleNotification(
+      turnCompleted([
+        {
+          type: "agentMessage",
+          id: "async-update",
+          phase: "final_answer",
+          delivery: "async",
+          text: "Background agent update.",
+        },
+        {
+          type: "agentMessage",
+          id: "terminal-answer",
+          phase: "final_answer",
+          text: "Finished.",
+        },
+      ]),
+    );
+
+    const result = projector.buildResult(buildEmptyToolTelemetry());
+    expect(result.assistantTexts).toEqual(["Finished."]);
+    expect(result.currentAttemptAssistant?.content).toEqual([{ type: "text", text: "Finished." }]);
+    const asyncProgressEvents = onAgentEvent.mock.calls
+      .map((call) => call[0])
+      .filter(
+        (event) =>
+          event.stream === "item" &&
+          event.data.itemId === "async-update" &&
+          event.data.kind === "preamble",
+      );
+    expect(asyncProgressEvents).toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({
+          kind: "preamble",
+          progressText: "Background agent update.",
+        }),
+      }),
+    ]);
+    expect(
+      onAgentEvent.mock.calls
+        .map((call) => call[0])
+        .filter(
+          (event) =>
+            event.stream === "item" &&
+            event.data.itemId === "async-update" &&
+            event.data.kind === "answer_candidate",
+        ),
+    ).toEqual([]);
+  });
+
   it("streams assistant deltas when the app-server omits the item phase", async () => {
     // Codex can stream agentMessage deltas without a final-answer phase. Route
     // them through replaceable events, not append-oriented partial callbacks.

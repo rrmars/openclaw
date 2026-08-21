@@ -255,6 +255,9 @@ export class CodexAppServerEventProjector {
       case "item/autoApprovalReview/completed":
         this.eventProjection.handleGuardianReview(notification.method, params);
         break;
+      case "autoApprovalReview/strictReviewRequired":
+        this.eventProjection.handleStrictReviewRequired(params);
+        break;
       case "guardianWarning":
         this.eventProjection.handleGuardianWarning(params);
         break;

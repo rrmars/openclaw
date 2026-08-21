@@ -94,7 +94,7 @@ describe("prepareCodexAttemptConnection", () => {
     expect(resolveModelPolicy).toHaveBeenCalledTimes(2);
   });
 
-  it("does not give OpenClaw ownership of an explicit operator approval policy", async () => {
+  it("normalizes the retired explicit untrusted approval policy", async () => {
     initializeGlobalHookRunner(
       createMockPluginRegistry([{ hookName: "before_tool_call", handler: vi.fn() }]),
     );
@@ -112,7 +112,7 @@ describe("prepareCodexAttemptConnection", () => {
       },
     });
 
-    expect(connection.appServer.approvalPolicy).toBe("untrusted");
+    expect(connection.appServer.approvalPolicy).toBe("on-request");
   });
 
   it("lets a workspace session mode override explicitly configured full exec", async () => {

@@ -84,6 +84,30 @@ describe("CodexAppServerEventProjector reasoning and guardian projection", () =>
     ).toBe(false);
   });
 
+  it("routes strict review requirements to the human-visible guardian lane", async () => {
+    const onAgentEvent = vi.fn();
+    const projector = await createProjector({ ...(await createParams()), onAgentEvent });
+
+    await projector.handleNotification(
+      forCurrentTurn("autoApprovalReview/strictReviewRequired", {
+        startedAtMs: 1_787_273_600_000,
+      }),
+    );
+
+    expect(
+      findAgentEvent(onAgentEvent, {
+        stream: "codex_app_server.guardian",
+        phase: "strict_review_required",
+      }).data,
+    ).toMatchObject({
+      method: "autoApprovalReview/strictReviewRequired",
+      startedAtMs: 1_787_273_600_000,
+    });
+    expect(
+      projector.buildResult(buildEmptyToolTelemetry()).didSendDeterministicApprovalPrompt,
+    ).toBeUndefined();
+  });
+
   it("projects thread-scoped guardian warnings", async () => {
     const onAgentEvent = vi.fn();
     const projector = await createProjector({ ...(await createParams()), onAgentEvent });

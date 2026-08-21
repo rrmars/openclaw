@@ -3069,6 +3069,64 @@ describe("Codex plugin thread config", () => {
     expect(timeoutMs).toBeLessThanOrEqual(60_000);
   });
 
+  it("evaluates app metadata and effective config against the resumed thread", async () => {
+    const request = vi.fn(async (method: string, params: unknown) => {
+      if (method === "plugin/installed") {
+        return pluginInstalled([
+          pluginSummary("google-calendar", { installed: true, enabled: true }),
+        ]);
+      }
+      if (method === "plugin/read") {
+        return pluginDetail("google-calendar", [appSummary("google-calendar-app")]);
+      }
+      if (method === "app/installed" || method === "app/read") {
+        return codexAppInventoryResponse(
+          method,
+          [appInfo("google-calendar-app", true)],
+          params as CodexAppServerRequestParams<typeof method>,
+        );
+      }
+      if (method === "config/read") {
+        return { config: {}, layers: [] };
+      }
+      throw new Error(`unexpected request ${method}`);
+    });
+
+    const config = await createCodexPluginThreadConfigStartupProvider({
+      inputFingerprint: undefined,
+      enabledPluginConfigKeys: ["google-calendar"],
+      policy: undefined,
+      requestTimeoutMs: 1_000,
+      signal: new AbortController().signal,
+      pluginConfig: {
+        codexPlugins: {
+          enabled: true,
+          plugins: {
+            "google-calendar": {
+              marketplaceName: CODEX_PLUGINS_MARKETPLACE_NAME,
+              pluginName: "google-calendar",
+            },
+          },
+        },
+      },
+      configCwd: "/workspace/project",
+      appCache: new CodexAppInventoryCache(),
+      appCacheKey: "runtime",
+      metadataCache: new CodexPluginMetadataCache(),
+      client: { request },
+    }).build({ threadId: "thread-149" });
+
+    expect(config.configPatch?.apps).toHaveProperty("google-calendar-app");
+    expect(request.mock.calls.find(([method]) => method === "app/read")?.[1]).toEqual({
+      appIds: ["google-calendar-app"],
+      threadId: "thread-149",
+    });
+    expect(request.mock.calls.find(([method]) => method === "config/read")?.[1]).toEqual({
+      includeLayers: true,
+      cwd: "/workspace/project",
+    });
+  });
+
   it("propagates an outer abort while waiting on coalesced metadata", async () => {
     const metadataCache = new CodexPluginMetadataCache();
     let release: ((response: v2.PluginInstalledResponse) => void) | undefined;

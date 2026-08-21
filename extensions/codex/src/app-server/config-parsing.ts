@@ -32,8 +32,8 @@ const codexAppServerPolicyModeSchema = z.enum(["yolo", "guardian"]);
 const codexAppServerApprovalPolicySchema = z.preprocess(
   // Preserve the rest of a shipped plugin config until doctor persists the
   // canonical value. Rejecting this field would discard the whole config.
-  (value) => (value === "on-failure" ? "on-request" : value),
-  z.enum(["never", "on-request", "untrusted"]),
+  (value) => (value === "on-failure" || value === "untrusted" ? "on-request" : value),
+  z.enum(["never", "on-request"]),
 );
 const codexAppServerSandboxSchema = z.enum(["read-only", "workspace-write", "danger-full-access"]);
 const codexAppServerApprovalsReviewerSchema = z.enum(["user", "auto_review", "guardian_subagent"]);

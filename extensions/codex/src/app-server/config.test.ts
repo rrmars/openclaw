@@ -2447,13 +2447,31 @@ allowed_sandbox_modes = ["read-only", "workspace-write"]
   });
 
   it.each([
-    { execMode: "auto", policies: ["never"] },
-    { execMode: "auto", policies: ["untrusted"] },
-    { execMode: "ask", policies: ["never"] },
-    { execMode: "ask", policies: ["untrusted"] },
+    {
+      execMode: "auto",
+      policies: ["never"],
+      error: "tools.exec.mode=auto requires Codex app-server prompting approvals",
+    },
+    {
+      execMode: "auto",
+      policies: ["untrusted"],
+      error:
+        'Codex requirements allowed_approval_policies only permits retired "untrusted"; replace it with "on-request".',
+    },
+    {
+      execMode: "ask",
+      policies: ["never"],
+      error: "tools.exec.mode=ask requires Codex app-server prompting approvals",
+    },
+    {
+      execMode: "ask",
+      policies: ["untrusted"],
+      error:
+        'Codex requirements allowed_approval_policies only permits retired "untrusted"; replace it with "on-request".',
+    },
   ] as const)(
     "fails closed when normalized OpenClaw $execMode mode can only use $policies approvals",
-    ({ execMode, policies }) => {
+    ({ execMode, policies, error }) => {
       expect(() =>
         resolveRuntimeForTest({
           pluginConfig: {},
@@ -2462,7 +2480,7 @@ allowed_sandbox_modes = ["read-only", "workspace-write"]
             .map((policy) => `"${policy}"`)
             .join(", ")}]\n`,
         }),
-      ).toThrow(`tools.exec.mode=${execMode} requires Codex app-server prompting approvals`);
+      ).toThrow(error);
     },
   );
 

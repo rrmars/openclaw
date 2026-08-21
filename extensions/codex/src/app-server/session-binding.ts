@@ -226,8 +226,8 @@ const threadBindingSchema = z
     // parsing it so the rest of the binding survives; SessionEntry owns live policy.
     approvalPolicy: z
       .preprocess(
-        (value) => (value === "on-failure" ? "on-request" : value),
-        z.enum(["never", "on-request", "untrusted"]).optional(),
+        (value) => (value === "on-failure" || value === "untrusted" ? "on-request" : value),
+        z.enum(["never", "on-request"]).optional(),
       )
       .catch(undefined),
     sandbox: z

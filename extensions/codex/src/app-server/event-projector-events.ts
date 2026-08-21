@@ -139,6 +139,17 @@ export class CodexEventProjection {
     });
   }
 
+  handleStrictReviewRequired(params: JsonObject): void {
+    this.emitAgentEvent({
+      stream: "codex_app_server.guardian",
+      data: {
+        method: "autoApprovalReview/strictReviewRequired",
+        phase: "strict_review_required",
+        startedAtMs: asFiniteNumber(params.startedAtMs),
+      },
+    });
+  }
+
   handleHook(method: string, params: JsonObject): void {
     const run = isJsonObject(params.run) ? params.run : undefined;
     if (!run) {
